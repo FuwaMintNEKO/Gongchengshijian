@@ -367,15 +367,32 @@ function loadAppInfo() {
 }
 
 function getCaptchaCode() {
+  // 显示加载中
+  var loginC = $('loginCaptcha');
+  var regC = $('regCaptcha');
+  var loadingHtml = '<div class="captcha-placeholder">加载中...</div>';
+  if (loginC) loginC.innerHTML = loadingHtml;
+  if (regC) regC.innerHTML = loadingHtml;
+
   ajax('GET', '/api/auth/captcha')
     .then(function(res) {
       if (res.code === 200 && res.data) {
         captcha.img = res.data.img || '';
         captcha.uuid = res.data.uuid || '';
         renderCaptcha();
+      } else {
+        var errMsg = (res.msg || res.message || '验证码获取失败');
+        var errHtml = '<div class="captcha-placeholder" onclick="getCaptchaCode()" style="color:#EF4444" title="点击重试">' + esc(errMsg) + '</div>';
+        if (loginC) loginC.innerHTML = errHtml;
+        if (regC) regC.innerHTML = errHtml;
       }
     })
-    .catch(function() {});
+    .catch(function(err) {
+      var errHtml = '<div class="captcha-placeholder" onclick="getCaptchaCode()" style="color:#EF4444" title="点击重试">加载失败,点击重试</div>';
+      if (loginC) loginC.innerHTML = errHtml;
+      if (regC) regC.innerHTML = errHtml;
+      console.error('验证码获取失败:', err);
+    });
 }
 
 // ====== 渲染 ======

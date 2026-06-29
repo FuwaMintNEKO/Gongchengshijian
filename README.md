@@ -57,21 +57,39 @@ git clone https://github.com/FuwaMintNEKO/Gongchengshijian.git school-trade
 cd school-trade
 ```
 
-### 3. 使用 Docker Compose 启动（自动创建数据库）
+### 3. 使用 Docker Compose 启动（一键部署所有服务）
+
+根目录 `docker-compose.yml` 统一编排 3 个服务，**一次启动全部到位**：
+- **MySQL** (3306)：同时初始化 `school_trade` 和 `uas_db` 两个数据库（自动导入 UAS 表结构）
+- **校园二手交易应用** (28080)：Go 后端 + 原生 HTML 前端
+- **UAS 统一认证后端** (8081)：OAuth2 授权页 + 用户管理 API
 
 ```bash
-# 启动（MySQL + 应用）
-docker compose up -d
+# 首次部署 / 更新代码后，必须加 --build 重新构建镜像（否则用的是旧代码镜像）
+docker compose up -d --build
 
-# 查看日志
+# 查看所有服务状态
+docker compose ps
+
+# 查看应用日志
 docker compose logs -f app
 
 # 验证健康检查
 curl http://localhost:28080/health
 # 预期: {"database":true,"status":"ok","time":"..."}
+
+curl http://localhost:8081/api/health
+# 预期: {"database":true,"status":"ok","time":"..."}
 ```
 
-> 无需手动安装 MySQL！`docker-compose.yml` 会自动创建 MySQL 8.0 容器和服务数据库 `school_trade`，应用启动时会自动建表并插入示例数据。
+> **重要**：更新代码后必须用 `docker compose up -d --build` 重新构建镜像，否则容器跑的还是旧代码（常见问题：登录页看不到 UAS 按钮、OAuth 报错等，都是因为没重新 build）。
+
+> 无需手动安装 MySQL！`docker-compose.yml` 会自动：
+> - 创建 MySQL 8.0 容器
+> - 创建 `school_trade` 空库（应用启动时自动建表+示例数据）
+> - 导入 `uas/docs/init_tables.sql` 创建 `uas_db` 库 + 表结构 + 默认数据（admin/admin123、示例应用等）
+> - 配置 school-trade 与 UAS 容器间网络互通（`UAS_BASE_URL=http://uas-backend:8081`）
+> - 自动填入 OAuth ClientSecret（`a15df289schooltradebf6cfbda`）
 
 **环境变量说明（可选）：**
 
@@ -80,10 +98,11 @@ curl http://localhost:28080/health
 | `PORT`       | `28080`    | 应用端口       |
 | `DB_PASSWORD`| `114514`   | MySQL 密码     |
 | `DB_NAME`    | `school_trade` | 数据库名   |
+| `JWT_SECRET` | `uas-secret-key-2026-school-trade` | UAS JWT 密钥 |
 
 ```bash
 # 自定义启动示例
-DB_PASSWORD=MySecurePwd DB_NAME=myschool docker compose up -d
+DB_PASSWORD=MySecurePwd docker compose up -d --build
 ```
 
 ### 4. 配置 Nginx 反向代理
@@ -175,15 +194,16 @@ Certbot 会自动修改 Nginx 配置并开启 HTTPS。
 docker compose ps
 
 # 查看应用日志
-docker compose logs -f app
+docker compose logs -f app      # 二手交易应用
+docker compose logs -f uas-backend  # UAS 认证后端
 
-# 重启应用
+# 重启单个服务
 docker compose restart app
+docker compose restart uas-backend
 
-# 更新代码后重新部署
+# 更新代码后重新部署（必须 --build，否则用旧镜像）
 git pull
-docker compose build app
-docker compose up -d
+docker compose up -d --build
 
 # 停止所有服务
 docker compose down
@@ -220,7 +240,9 @@ go build -o school-trade .
 
 ## UAS 统一身份认证平台部署
 
-UAS 是独立部署的 OAuth2.0 认证平台，为二手交易应用提供单点登录。**必须先部署 UAS，再让二手交易应用通过 UAS 登录。**
+> **如果你已用根目录 `docker compose up -d --build` 部署**，UAS 后端已包含在内（`uas-backend` 服务），无需再单独部署 UAS。本章节仅用于需要**独立部署 UAS** 的场景。
+
+UAS 是独立部署的 OAuth2.0 认证平台，为二手交易应用提供单点登录。
 
 > **重要**：UAS 后端已 Docker 化，在 Linux 服务器上通过 Docker 自动编译为 Linux 二进制运行。**不要使用仓库中的 `uas-server.exe`（Windows 二进制，Linux 无法运行）**。
 

@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # ====== MySQL：同时承载 school_trade 和 uas_db 两个数据库 ======
   mysql:
     image: mysql:8.0
     container_name: school-trade-db
@@ -14,12 +15,14 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./uas/docs/init_tables.sql:/docker-entrypoint-initdb.d/uas_init.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  # ====== 校园二手交易应用 ======
   app:
     build:
       context: .
@@ -35,6 +38,36 @@ services:
       DB_USER: root
       DB_PASSWORD: ${DB_PASSWORD:-114514}
       DB_NAME: ${DB_NAME:-school_trade}
+      # OAuth2 对接 UAS（容器间通信用服务名 uas-backend）
+      UAS_BASE_URL: "http://uas-backend:8081"
+      UAS_CLIENT_ID: "KK790SCHOOLTRADE"
+      UAS_CLIENT_SECRET: "a15df289schooltradebf6cfbda"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      uas-backend:
+        condition: service_started
+
+  # ====== UAS 统一身份认证后端 ======
+  uas-backend:
+    build:
+      context: ./uas/backend
+      dockerfile: Dockerfile
+    container_name: uas-backend
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      UAS_PORT: "8081"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-114514}
+      DB_NAME: uas_db
+      JWT_SECRET: ${JWT_SECRET:-uas-secret-key-2026-school-trade}
+      JWT_EXPIRE_HOURS: "24"
+      OAUTH_CODE_EXPIRE: "300"
+      OAUTH_TOKEN_EXPIRE: "604800"
     depends_on:
       mysql:
         condition: service_healthy
