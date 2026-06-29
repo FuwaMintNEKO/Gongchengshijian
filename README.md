@@ -4,12 +4,14 @@ Go + MySQL 构建的校园二手交易平台，支持用户注册登录、商品
 
 ## 系统组成
 
-| 模块             | 端口 | 目录                  | 说明                                              |
-| ---------------- | ---- | --------------------- | ------------------------------------------------- |
-| 二手交易应用     | 8080 | `backend/` + `frontend/` | Go 后端 + 原生 HTML 前端，主应用                 |
-| UAS 后端 API     | 8081 | `uas/backend/`         | Go + Gin，OAuth2 授权、用户管理、JWT 签发        |
-| UAS 管理前端     | 8082 | `uas/frontend/`        | Vue3 + Element Plus，UAS 平台管理后台            |
-| MySQL 数据库     | 3306 | -                     | 同时承载 `school_trade` 与 `uas_db` 两个数据库   |
+| 模块             | 端口  | 目录                       | 说明                                                                 |
+| ---------------- | ----- | -------------------------- | -------------------------------------------------------------------- |
+| 二手交易应用     | 28080 | `backend/` + `frontend/`   | Go 后端 + 原生 HTML 前端，主应用                                    |
+| UAS 后端 API     | 8081  | `uas/backend/`             | Go + Gin，OAuth2 授权、用户管理、JWT 签发，**直接 serve 授权页 HTML** |
+| UAS 管理前端     | 8082  | `uas/frontend/`（可选）    | Vue3 + Element Plus，UAS 平台管理后台，仅用于 UAS 管理员操作         |
+| MySQL 数据库     | 3306  | -                          | 同时承载 `school_trade` 与 `uas_db` 两个数据库                      |
+
+> **OAuth 流程只需 28080 + 8081 两个服务**，授权页是原生 HTML 由 UAS 后端直接返回，不需要启动 8082 前端服务器。8082 仅在需要进 UAS 管理后台时启动。
 
 ## 技术栈
 
@@ -289,16 +291,16 @@ sudo systemctl enable --now uas-backend
 sudo systemctl status uas-backend
 ```
 
-### 3. 启动 UAS 管理前端（端口 8082）
+### 3. 启动 UAS 管理前端（端口 8082，可选）
+
+> **OAuth 授权流程不需要此步**。授权页 `uas/backend/public/oauth/authorize.html` 是原生 HTML，已由 UAS 后端 8081 直接 serve。
+> 仅当需要使用 UAS 管理后台（用户管理、应用管理、统计等）时才启动 8082 前端。
 
 ```bash
 cd uas/frontend
 
 # 安装依赖（首次部署需要 Node.js 18+）
 npm install
-
-# 开发模式（仅用于调试，生产环境请用下面的构建方式）
-npm run dev
 
 # 生产构建
 npm run build
@@ -355,28 +357,33 @@ server {
 
 ### 5. 二手交易应用接入 UAS
 
-UAS 初始化时已自动注册「校园二手交易平台」应用（AppID: `KK790SCHOOLTRADE`），回调地址指向 `http://localhost:8080/oauth/callback`。
+UAS 初始化时已自动注册「校园二手交易平台」应用（AppID: `KK790SCHOOLTRADE`），数据库中注册的回调地址 path 为 `/oauth/callback`。
 
-**生产环境需要更新回调地址**为云服务器实际访问地址：
+**回调地址校验策略**：UAS 后端只校验 redirect_uri 的 path 部分，允许 host:port 变化，因此本地、云服务器（同 IP 不同端口）均可直接工作，无需手动改 redirect_uri。
 
-```bash
-# 登录 UAS 管理后台 http://服务器IP:8082
-# 默认账号 admin / admin123
-# 进入「应用接入 → 应用管理」→ 编辑「校园二手交易平台」
-# 将 redirect_uri 改为：http://你的服务器IP:8080/oauth/callback
-```
+**OAuth 跳转地址自动推断**：二手交易应用 `backend/handlers/oauth.go` 会从当前请求的 Host 自动推断：
+- UAS 授权页地址：`http://服务器IP:8081/oauth/authorize`（同 IP + UAS 后端端口）
+- 回调地址：`http://服务器IP:28080/oauth/callback`（同 IP + 当前请求端口）
 
-二手交易应用的 UAS 对接配置在 `backend/handlers/oauth.go` 中，默认指向 `http://localhost:8081`。如果 UAS 后端部署在其他主机，需通过环境变量 `UAS_BASE_URL` 覆盖，或修改代码中的默认值。
+如需固定地址，可通过环境变量覆盖：
+
+| 环境变量           | 默认（空时自动推断）                | 说明                          |
+| ------------------ | ----------------------------------- | ----------------------------- |
+| `UAS_BASE_URL`     | `http://localhost:8081`             | UAS 后端 API 地址             |
+| `UAS_FRONTEND_URL` | 空（推断为 `同IP:8081`）            | UAS 授权页地址                |
+| `UAS_REDIRECT_URI` | 空（推断为 `同IP:当前端口/oauth/callback`） | OAuth 回调地址          |
+| `UAS_CLIENT_ID`    | `KK790SCHOOLTRADE`                  | 应用 AppID                    |
+| `UAS_CLIENT_SECRET`| 空（不填则 OAuth 按钮置灰）         | 应用 AppSecret                |
 
 ### 6. 访问入口
 
-| 入口                      | 地址                              |
-| ------------------------- | --------------------------------- |
-| 二手交易应用首页          | `http://服务器IP:8080/`           |
-| 二手交易应用登录页        | `http://服务器IP:8080/pages/login.html` |
-| UAS 管理后台              | `http://服务器IP:8082/`           |
-| UAS 后端 API              | `http://服务器IP:8081/api/`       |
-| UAS 授权页（OAuth2 入口） | 由二手交易应用登录页自动跳转       |
+| 入口                      | 地址                                  |
+| ------------------------- | ------------------------------------- |
+| 二手交易应用首页          | `http://服务器IP:28080/`              |
+| 二手交易应用登录页        | `http://服务器IP:28080/pages/login.html` |
+| UAS 管理后台（可选）      | `http://服务器IP:8082/`               |
+| UAS 后端 API              | `http://服务器IP:8081/api/`           |
+| UAS 授权页（OAuth2 入口） | `http://服务器IP:8081/oauth/authorize`，由二手交易应用登录页自动跳转 |
 
 ### 7. UAS 日常维护
 
@@ -391,6 +398,8 @@ sudo systemctl restart uas-backend
 cd school-trade
 git pull
 cd uas/backend && go build -o uas-server . && sudo systemctl restart uas-backend
+# 授权页是原生 HTML（uas/backend/public/oauth/authorize.html），由后端直接 serve，无需构建
+# 仅 UAS 管理前端（8082）需构建：
 cd ../frontend && npm run build  # 前端重新构建即可，无需重启 Nginx
 
 # 备份 UAS 数据库
@@ -416,6 +425,8 @@ school-trade/
 │   │   ├── middleware/   # JWT 鉴权中间件
 │   │   ├── models/       # UAS 数据模型
 │   │   ├── config/       # 环境变量配置
+│   │   ├── public/       # 静态资源（OAuth 授权页 HTML 由后端直接 serve）
+│   │   │   └── oauth/authorize.html
 │   │   └── utils/        # 工具函数
 │   ├── frontend/         # UAS Vue3 管理前端
 │   │   ├── src/
