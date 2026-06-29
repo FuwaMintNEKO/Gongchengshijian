@@ -222,27 +222,54 @@ go build -o school-trade .
 
 UAS 是独立部署的 OAuth2.0 认证平台，为二手交易应用提供单点登录。**必须先部署 UAS，再让二手交易应用通过 UAS 登录。**
 
-### 1. 创建 UAS 数据库
+> **重要**：UAS 后端已 Docker 化，在 Linux 服务器上通过 Docker 自动编译为 Linux 二进制运行。**不要使用仓库中的 `uas-server.exe`（Windows 二进制，Linux 无法运行）**。
 
-复用上一步的 MySQL 实例，创建独立的 `uas_db` 数据库：
+### 1. 使用 Docker Compose 启动 UAS（推荐）
 
 ```bash
-# 导入表结构和初始数据（含默认管理员、角色、菜单、示例应用等）
-mysql -uroot -p < uas/docs/init_tables.sql
+cd uas
+docker compose up -d
 
-# 验证
-mysql -uroot -p -e "USE uas_db; SHOW TABLES;"
-# 预期看到：u_user / u_corp_user / u_app / sys_user / sys_role / sys_menu 等约 20 张表
+# 查看日志
+docker compose logs -f uas-backend
+
+# 验证健康检查
+curl http://localhost:8081/api/health
+# 预期: {"database":true,"status":"ok","time":"..."}
 ```
 
-> 默认管理员账号：`admin` / `admin123`（首次登录后请修改密码）
+`uas/docker-compose.yml` 会自动：
+- 启动 MySQL 8.0 容器（端口 3307，避免与 school-trade 的 3306 冲突）
+- 自动导入 `uas/docs/init_tables.sql` 初始化表结构和默认数据
+- 编译并启动 UAS 后端（端口 8081）
 
-### 2. 启动 UAS 后端（端口 8081）
+**UAS 环境变量（可选，通过 docker compose 覆盖）：**
+
+| 变量                  | 默认值                              | 说明                    |
+| --------------------- | ----------------------------------- | ----------------------- |
+| `UAS_PORT`            | `8081`                              | UAS 后端端口            |
+| `DB_HOST`             | `mysql`（容器内）                   | MySQL 主机              |
+| `DB_PORT`             | `3306`                              | MySQL 端口              |
+| `DB_USER`             | `root`                              | MySQL 用户名            |
+| `DB_PASSWORD`         | `114514`                            | MySQL 密码              |
+| `DB_NAME`             | `uas_db`                            | UAS 数据库名            |
+| `JWT_SECRET`          | `uas-secret-key-2026-school-trade`  | JWT 签名密钥            |
+| `JWT_EXPIRE_HOURS`    | `24`                                | Token 有效期（小时）    |
+| `OAUTH_CODE_EXPIRE`   | `300`                               | 授权码有效期（秒）      |
+| `OAUTH_TOKEN_EXPIRE`  | `604800`                            | OAuth Token 有效期（秒）|
+
+默认管理员账号：`admin` / `admin123`（首次登录后请修改密码）
+
+### 2. 手动部署（不使用 Docker）
+
+需自行安装 MySQL 8.0+ 和 Go 1.24+：
 
 ```bash
-cd uas/backend
+# 创建 UAS 数据库并导入初始数据
+mysql -uroot -p < uas/docs/init_tables.sql
 
-# 配置环境变量（与主应用共用 MySQL，但使用独立的 uas_db 数据库）
+# 编译并运行（Linux 服务器会生成 Linux 二进制）
+cd uas/backend
 export DB_HOST=127.0.0.1
 export DB_PORT=3306
 export DB_USER=root
@@ -250,45 +277,8 @@ export DB_PASSWORD=你的密码
 export DB_NAME=uas_db
 export UAS_PORT=8081
 export JWT_SECRET=uas-secret-key-2026-school-trade
-
-# 编译并后台运行
 go build -o uas-server .
-nohup ./uas-server > uas.log 2>&1 &
-
-# 验证健康检查
-curl http://localhost:8081/api/health
-# 预期: {"database":true,"status":"ok","time":"..."}
-```
-
-**systemd 服务方式（推荐生产环境）：**
-
-```bash
-sudo tee /etc/systemd/system/uas-backend.service > /dev/null <<'EOF'
-[Unit]
-Description=UAS Backend API
-After=network.target mysql.service
-
-[Service]
-Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/school-trade/uas/backend
-Environment=DB_HOST=127.0.0.1
-Environment=DB_PORT=3306
-Environment=DB_USER=root
-Environment=DB_PASSWORD=你的密码
-Environment=DB_NAME=uas_db
-Environment=UAS_PORT=8081
-ExecStart=/home/ubuntu/school-trade/uas/backend/uas-server
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now uas-backend
-sudo systemctl status uas-backend
+./uas-server
 ```
 
 ### 3. 启动 UAS 管理前端（端口 8082，可选）
@@ -340,22 +330,7 @@ server {
 }
 ```
 
-### 4. UAS 环境变量说明
-
-| 变量                  | 默认值                              | 说明                    |
-| --------------------- | ----------------------------------- | ----------------------- |
-| `UAS_PORT`            | `8081`                              | UAS 后端端口            |
-| `DB_HOST`             | `127.0.0.1`                         | MySQL 主机              |
-| `DB_PORT`             | `3306`                              | MySQL 端口              |
-| `DB_USER`             | `root`                              | MySQL 用户名            |
-| `DB_PASSWORD`         | `114514`                            | MySQL 密码              |
-| `DB_NAME`             | `uas_db`                            | UAS 数据库名            |
-| `JWT_SECRET`          | `uas-secret-key-2026-school-trade`  | JWT 签名密钥            |
-| `JWT_EXPIRE_HOURS`    | `24`                                | Token 有效期（小时）    |
-| `OAUTH_CODE_EXPIRE`   | `300`                               | 授权码有效期（秒）      |
-| `OAUTH_TOKEN_EXPIRE`  | `604800`                            | OAuth Token 有效期（秒）|
-
-### 5. 二手交易应用接入 UAS
+### 4. 二手交易应用接入 UAS
 
 UAS 初始化时已自动注册「校园二手交易平台」应用（AppID: `KK790SCHOOLTRADE`），数据库中注册的回调地址 path 为 `/oauth/callback`。
 
@@ -385,25 +360,36 @@ UAS 初始化时已自动注册「校园二手交易平台」应用（AppID: `KK
 | UAS 后端 API              | `http://服务器IP:8081/api/`           |
 | UAS 授权页（OAuth2 入口） | `http://服务器IP:8081/oauth/authorize`，由二手交易应用登录页自动跳转 |
 
-### 7. UAS 日常维护
+### 6. UAS 日常维护
 
 ```bash
+cd uas
+
+# 查看服务状态
+docker compose ps
+
 # 查看后端日志
-journalctl -u uas-backend -f
+docker compose logs -f uas-backend
 
-# 重启后端
-sudo systemctl restart uas-backend
+# 重启 UAS 后端
+docker compose restart uas-backend
 
-# 更新 UAS 代码
+# 更新 UAS 代码后重新部署（Docker 会自动重新编译为 Linux 二进制）
 cd school-trade
 git pull
-cd uas/backend && go build -o uas-server . && sudo systemctl restart uas-backend
+cd uas
+docker compose build uas-backend
+docker compose up -d
+
 # 授权页是原生 HTML（uas/backend/public/oauth/authorize.html），由后端直接 serve，无需构建
 # 仅 UAS 管理前端（8082）需构建：
-cd ../frontend && npm run build  # 前端重新构建即可，无需重启 Nginx
+cd frontend && npm run build  # 前端重新构建即可，无需重启 Nginx
+
+# 停止所有 UAS 服务
+docker compose down
 
 # 备份 UAS 数据库
-mysqldump -uroot -p uas_db > uas_backup.sql
+docker compose exec -T mysql mysqldump -uroot -p114514 uas_db > uas_backup.sql
 ```
 
 ## 项目结构
@@ -427,7 +413,9 @@ school-trade/
 │   │   ├── config/       # 环境变量配置
 │   │   ├── public/       # 静态资源（OAuth 授权页 HTML 由后端直接 serve）
 │   │   │   └── oauth/authorize.html
-│   │   └── utils/        # 工具函数
+│   │   ├── utils/        # 工具函数
+│   │   ├── Dockerfile    # UAS 后端 Docker 构建（Linux 二进制）
+│   │   └── .dockerignore
 │   ├── frontend/         # UAS Vue3 管理前端
 │   │   ├── src/
 │   │   │   ├── api/      # 接口封装
@@ -435,8 +423,9 @@ school-trade/
 │   │   │   ├── router/   # 路由配置
 │   │   │   └── views/    # 页面（dashboard/system/user/app/...）
 │   │   └── vite.config.js
-│   └── docs/
-│       └── init_tables.sql  # UAS 数据库初始化脚本
+│   ├── docs/
+│   │   └── init_tables.sql  # UAS 数据库初始化脚本（docker compose 自动导入）
+│   └── docker-compose.yml   # UAS 后端 + MySQL 编排
 ├── diagrams/             # 项目架构图、ER图、甘特图等
 ├── docker-compose.yml    # 二手交易应用 Docker 编排
 ├── Dockerfile            # 二手交易应用 Dockerfile

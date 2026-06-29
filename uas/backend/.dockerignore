@@ -1,0 +1,7 @@
+**/.trae/
+**/.git/
+**/.gitignore
+*.exe
+*.exe~
+uas-server
+uas.exe

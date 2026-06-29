@@ -1,0 +1,53 @@
+# UAS 统一身份认证平台 - Docker 编排
+# 包含：MySQL（自动初始化 uas_db）+ UAS 后端
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: uas-db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-114514}
+      MYSQL_DATABASE: uas_db
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - uas_mysql_data:/var/lib/mysql
+      - ./docs/init_tables.sql:/docker-entrypoint-initdb.d/init_tables.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  uas-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: uas-backend
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      UAS_PORT: "8081"
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: ${DB_PASSWORD:-114514}
+      DB_NAME: uas_db
+      JWT_SECRET: ${JWT_SECRET:-uas-secret-key-2026-school-trade}
+      JWT_EXPIRE_HOURS: "24"
+      OAUTH_CODE_EXPIRE: "300"
+      OAUTH_TOKEN_EXPIRE: "604800"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - uas_uploads:/app/uploads
+
+volumes:
+  uas_mysql_data:
+  uas_uploads:
