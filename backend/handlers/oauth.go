@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,18 +20,20 @@ import (
 
 // OAuthConfig OAuth2 配置（从环境变量读取，提供默认值）
 type OAuthConfig struct {
-	UASBaseURL   string // UAS 服务地址
-	ClientID     string // 应用 AppID
-	ClientSecret string // 应用 AppSecret
-	RedirectURI  string // 回调地址
+	UASBaseURL     string // UAS 后端 API 地址（换取 token、userinfo）
+	UASFrontendURL string // UAS 前端地址（授权页跳转），空则从请求推断
+	ClientID       string // 应用 AppID
+	ClientSecret   string // 应用 AppSecret
+	RedirectURI    string // 回调地址，空则从请求推断
 }
 
 func loadOAuthConfig() OAuthConfig {
 	cfg := OAuthConfig{
-		UASBaseURL:   getEnv("UAS_BASE_URL", "http://localhost:8081"),
-		ClientID:     getEnv("UAS_CLIENT_ID", "KK790SCHOOLTRADE"),
-		ClientSecret: getEnv("UAS_CLIENT_SECRET", ""),
-		RedirectURI:  getEnv("UAS_REDIRECT_URI", "http://localhost:8080/oauth/callback"),
+		UASBaseURL:     getEnv("UAS_BASE_URL", "http://localhost:8081"),
+		UASFrontendURL: getEnv("UAS_FRONTEND_URL", ""),
+		ClientID:       getEnv("UAS_CLIENT_ID", "KK790SCHOOLTRADE"),
+		ClientSecret:   getEnv("UAS_CLIENT_SECRET", ""),
+		RedirectURI:    getEnv("UAS_REDIRECT_URI", ""),
 	}
 	return cfg
 }
@@ -40,6 +43,42 @@ func getEnv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// getRequestScheme 从请求推断协议（支持反向代理）
+func getRequestScheme(c *gin.Context) string {
+	if c.Request.TLS != nil {
+		return "https"
+	}
+	if xfp := c.GetHeader("X-Forwarded-Proto"); xfp != "" {
+		return xfp
+	}
+	return "http"
+}
+
+// resolveRedirectURI 解析回调地址：优先用配置，否则从请求推断
+// 推断规则：scheme://当前host/oauth/callback
+func (h *OAuthHandler) resolveRedirectURI(c *gin.Context) string {
+	if h.Cfg.RedirectURI != "" {
+		return h.Cfg.RedirectURI
+	}
+	return fmt.Sprintf("%s://%s/oauth/callback", getRequestScheme(c), c.Request.Host)
+}
+
+// resolveUASFrontendURL 解析 UAS 前端地址：优先用配置，否则从请求推断
+// 推断规则：与当前请求同 IP，端口取 UAS 前端默认端口 8082
+func (h *OAuthHandler) resolveUASFrontendURL(c *gin.Context) string {
+	if h.Cfg.UASFrontendURL != "" {
+		return h.Cfg.UASFrontendURL
+	}
+	scheme := getRequestScheme(c)
+	host := c.Request.Host
+	// 提取 IP（去掉端口），如果原 host 没有端口则直接用
+	ip, _, err := net.SplitHostPort(host)
+	if err != nil {
+		ip = host
+	}
+	return fmt.Sprintf("%s://%s:8082", scheme, ip)
 }
 
 // OAuthHandler 处理与UAS的OAuth2对接
@@ -62,10 +101,11 @@ func (h *OAuthHandler) GetConfig(c *gin.Context) {
 		Code:    200,
 		Message: "ok",
 		Data: gin.H{
-			"uasBaseUrl":  h.Cfg.UASBaseURL,
-			"clientId":    h.Cfg.ClientID,
-			"redirectUri": h.Cfg.RedirectURI,
-			"enabled":     h.Cfg.ClientSecret != "",
+			"uasBaseUrl":     h.Cfg.UASBaseURL,
+			"uasFrontendUrl": h.resolveUASFrontendURL(c),
+			"clientId":       h.Cfg.ClientID,
+			"redirectUri":    h.resolveRedirectURI(c),
+			"enabled":        h.Cfg.ClientSecret != "",
 		},
 	})
 }
@@ -82,11 +122,16 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	// state 防止CSRF，这里用 frontRedirect 编码后作为 state
 	state := frontRedirect
 
+	// 授权页地址与回调地址：优先用环境变量配置，未配置则从当前请求推断
+	// 这样本地和云服务器（同 IP 不同端口）都无需手动配置即可工作
+	uasFrontendURL := h.resolveUASFrontendURL(c)
+	redirectURI := h.resolveRedirectURI(c)
+
 	// UAS前端授权页地址（UAS前端会调用 /api/oauth/authorize 获取应用信息）
 	uasAuthorizeURL := fmt.Sprintf("%s/oauth/authorize?client_id=%s&redirect_uri=%s&response_type=code&state=%s&scope=userinfo",
-		h.Cfg.UASBaseURL,
+		uasFrontendURL,
 		url.QueryEscape(h.Cfg.ClientID),
-		url.QueryEscape(h.Cfg.RedirectURI),
+		url.QueryEscape(redirectURI),
 		url.QueryEscape(state),
 	)
 	c.Redirect(http.StatusFound, uasAuthorizeURL)
@@ -115,7 +160,9 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 	}
 
 	// 用 code 换取 access_token
-	tokenResp, err := h.exchangeCodeForToken(code)
+	// redirect_uri 必须与 Login 时传给 UAS 的一致，否则 UAS 会拒绝
+	redirectURI := h.resolveRedirectURI(c)
+	tokenResp, err := h.exchangeCodeForToken(code, redirectURI)
 	if err != nil {
 		h.redirectToFront(c, "/", "换取令牌失败: "+err.Error())
 		return
@@ -164,13 +211,13 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 }
 
 // exchangeCodeForToken 用授权码向UAS换取access_token
-func (h *OAuthHandler) exchangeCodeForToken(code string) (map[string]interface{}, error) {
+func (h *OAuthHandler) exchangeCodeForToken(code, redirectURI string) (map[string]interface{}, error) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"client_id":     {h.Cfg.ClientID},
 		"client_secret": {h.Cfg.ClientSecret},
-		"redirect_uri":  {h.Cfg.RedirectURI},
+		"redirect_uri":  {redirectURI},
 	}
 
 	resp, err := http.PostForm(h.Cfg.UASBaseURL+"/api/oauth/token", form)

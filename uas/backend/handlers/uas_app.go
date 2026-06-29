@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"database/sql"
+	"net/url"
 	"strconv"
-	"strings"
 
 	"uas/config"
 	"uas/store"
@@ -254,10 +254,14 @@ func (h *AppHandler) VerifyApp(appID, redirectURI string) (*struct {
 	}
 
 	// 校验回调地址
+	// 策略：只校验 path 部分，允许 host:port 变化（适配同 IP 不同端口部署）
+	// 数据库中注册如 http://localhost:8080/oauth/callback，实际请求如 http://1.2.3.4:28080/oauth/callback
+	// 只要 path 都是 /oauth/callback 即通过
 	dbRedirectStr := dbRedirect.String
-	if !strings.HasPrefix(redirectURI, dbRedirectStr) && redirectURI != dbRedirectStr {
-		// 部分匹配策略：允许前缀匹配（用于带参数的回调）
-		if !strings.HasPrefix(redirectURI, strings.TrimSuffix(dbRedirectStr, "/")) {
+	if dbRedirectStr != "" && dbRedirectStr != "*" {
+		dbPath := redirectPath(dbRedirectStr)
+		reqPath := redirectPath(redirectURI)
+		if dbPath == "" || reqPath == "" || dbPath != reqPath {
 			return nil, sql.ErrNoRows
 		}
 	}
@@ -281,4 +285,15 @@ func (h *AppHandler) VerifyApp(appID, redirectURI string) (*struct {
 		RedirectURI: dbRedirectStr,
 		Status:      status,
 	}, nil
+}
+
+// redirectPath 提取 redirect_uri 的 path 部分（小写 scheme+host 后的路径）
+// 例如 http://localhost:8080/oauth/callback -> /oauth/callback
+// 解析失败返回空字符串
+func redirectPath(rawURI string) string {
+	u, err := url.Parse(rawURI)
+	if err != nil {
+		return ""
+	}
+	return u.EscapedPath()
 }
