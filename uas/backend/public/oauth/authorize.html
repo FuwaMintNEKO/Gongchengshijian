@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>统一身份认证 - UAS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: #303133;
+  }
+  .authorize-box {
+    width: 480px;
+    max-width: 100%;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .header {
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: #fff;
+    padding: 24px;
+    text-align: center;
+  }
+  .header h1 { font-size: 22px; margin-bottom: 6px; }
+  .header p { font-size: 12px; opacity: 0.8; }
+
+  .content { padding: 24px; min-height: 280px; }
+
+  .app-info {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .app-icon {
+    width: 60px; height: 60px;
+    border-radius: 8px;
+    background: #ecf5ff;
+    color: #409eff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    flex-shrink: 0;
+  }
+  .app-detail { flex: 1; min-width: 0; }
+  .app-detail h2 { font-size: 18px; margin-bottom: 6px; }
+  .app-detail p { color: #606266; font-size: 13px; margin-bottom: 4px; }
+  .app-id { color: #909399; font-size: 12px; }
+
+  .divider {
+    height: 1px;
+    background: #ebeef5;
+    margin: 20px 0;
+  }
+
+  .scope-list .title { font-weight: 600; margin-bottom: 10px; }
+  .scope-list ul { list-style: none; }
+  .scope-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    color: #606266;
+    font-size: 14px;
+  }
+  .scope-list li::before {
+    content: "✓";
+    color: #67c23a;
+    font-weight: bold;
+    font-size: 16px;
+  }
+
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid #f0f0f0;
+    margin-bottom: 16px;
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    cursor: pointer;
+    color: #606266;
+    font-size: 14px;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+  }
+  .tab.active {
+    color: #409eff;
+    border-bottom-color: #409eff;
+    font-weight: 600;
+  }
+
+  .form-item { margin-bottom: 14px; }
+  .input-wrap {
+    position: relative;
+  }
+  .input-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #909399;
+    font-size: 14px;
+    pointer-events: none;
+  }
+  .input {
+    width: 100%;
+    height: 40px;
+    padding: 0 12px 0 36px;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .input:focus { border-color: #409eff; }
+
+  .radio-group {
+    display: flex;
+    gap: 20px;
+    padding: 4px 0;
+  }
+  .radio-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #606266;
+  }
+  .radio-label input { cursor: pointer; }
+
+  .captcha-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+  .captcha-row .input { flex: 1; }
+  .captcha-img {
+    width: 120px;
+    height: 40px;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid #dcdfe6;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+  .captcha-placeholder {
+    width: 120px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #909399;
+    font-size: 12px;
+    background: #f5f7fa;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .btn {
+    width: 100%;
+    height: 40px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-primary { background: #409eff; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #66b1ff; }
+  .btn-default { background: #fff; color: #606266; border: 1px solid #dcdfe6; }
+  .btn-default:hover:not(:disabled) { color: #409eff; border-color: #c6e2ff; background: #ecf5ff; }
+  .btn-block { width: 100%; }
+  .mt10 { margin-top: 10px; }
+
+  .confirm-section .title { font-weight: 600; margin-bottom: 16px; text-align: center; }
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f5f7fa;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .user-avatar {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    background: #409eff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .username { font-weight: 600; }
+  .user-type { font-size: 12px; color: #909399; }
+
+  .footer {
+    padding: 16px 24px;
+    background: #f5f7fa;
+    text-align: center;
+  }
+  .footer p { font-size: 12px; color: #909399; margin-bottom: 4px; }
+  .copyright { color: #c0c4cc; }
+
+  .msg {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 10px 20px;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+    z-index: 9999;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .msg.show { opacity: 1; }
+  .msg-success { background: #67c23a; }
+  .msg-error { background: #f56c6c; }
+  .msg-warning { background: #e6a23c; }
+
+  .loading-mask {
+    text-align: center;
+    padding: 60px 0;
+    color: #909399;
+  }
+  .loading-mask .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid #ecf5ff;
+    border-top-color: #409eff;
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-box {
+    text-align: center;
+    padding: 40px 0;
+  }
+  .error-box .icon { font-size: 48px; color: #f56c6c; margin-bottom: 12px; }
+  .error-box p { color: #606266; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="authorize-box">
+  <div class="header">
+    <h1>统一身份认证中心</h1>
+    <p>Unified Authentication Service</p>
+  </div>
+  <div class="content" id="content">
+    <div class="loading-mask" id="loadingMask">
+      <div class="spinner"></div>
+      <p>加载中...</p>
+    </div>
+  </div>
+  <div class="footer">
+    <p>授权后该应用可访问您的UAS账户信息，请确认您信任该应用</p>
+    <p class="copyright">© 2026 统一身份认证管理系统</p>
+  </div>
+</div>
+
+<div class="msg" id="msgBox"></div>
+
+<script>
+// ====== 工具函数 ======
+var $ = function(id) { return document.getElementById(id); };
+
+function showMsg(text, type) {
+  var box = $('msgBox');
+  box.textContent = text;
+  box.className = 'msg msg-' + (type || 'info') + ' show';
+  setTimeout(function() { box.className = 'msg'; }, 3000);
+}
+
+function ajax(method, url, data, isForm) {
+  return new Promise(function(resolve, reject) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, url, true);
+    if (isForm) {
+      xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    } else if (data) {
+      xhr.setRequestHeader('Content-Type', 'application/json');
+    }
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState !== 4) return;
+      try {
+        var res = JSON.parse(xhr.responseText);
+        resolve(res);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    xhr.onerror = function() { reject(new Error('网络错误')); };
+    var body = null;
+    if (data) {
+      body = isForm ? data : JSON.stringify(data);
+    }
+    xhr.send(body);
+  });
+}
+
+// ====== 全局状态 ======
+var params = {};
+var appInfo = null;
+var uasUser = null;       // { userId, userType, nickname, realName }
+var captcha = { img: '', uuid: '' };
+var activeTab = 'login';
+
+// ====== 初始化 ======
+function init() {
+  var search = new URLSearchParams(window.location.search);
+  params = {
+    client_id: search.get('client_id') || '',
+    redirect_uri: search.get('redirect_uri') || '',
+    response_type: search.get('response_type') || '',
+    state: search.get('state') || '',
+    scope: search.get('scope') || 'userinfo'
+  };
+  if (!params.client_id || !params.redirect_uri) {
+    showError('参数缺失', '缺少 client_id 或 redirect_uri');
+    return;
+  }
+  loadAppInfo();
+}
+
+function loadAppInfo() {
+  ajax('GET', '/api/oauth/authorize?client_id=' + encodeURIComponent(params.client_id)
+       + '&redirect_uri=' + encodeURIComponent(params.redirect_uri)
+       + '&response_type=' + encodeURIComponent(params.response_type)
+       + '&state=' + encodeURIComponent(params.state)
+       + '&scope=' + encodeURIComponent(params.scope))
+    .then(function(res) {
+      if (res.code === 200 && res.data) {
+        appInfo = res.data;
+        renderAppInfo();
+      } else {
+        showError('应用信息获取失败', res.msg || res.message || '');
+      }
+    })
+    .catch(function() {
+      showError('应用信息获取失败', '网络错误');
+    });
+}
+
+function getCaptchaCode() {
+  ajax('GET', '/api/auth/captcha')
+    .then(function(res) {
+      if (res.code === 200 && res.data) {
+        captcha.img = res.data.img || '';
+        captcha.uuid = res.data.uuid || '';
+        renderCaptcha();
+      }
+    })
+    .catch(function() {});
+}
+
+// ====== 渲染 ======
+function renderAppInfo() {
+  var html = '';
+  html += '<div class="app-info">';
+  html += '  <div class="app-icon">🔗</div>';
+  html += '  <div class="app-detail">';
+  html += '    <h2>' + esc(appInfo.appName) + '</h2>';
+  html += '    <p>' + esc(appInfo.description || '该应用请求获取您的身份信息') + '</p>';
+  html += '    <p class="app-id">AppID: ' + esc(appInfo.appId) + '</p>';
+  html += '  </div>';
+  html += '</div>';
+  html += '<div class="divider"></div>';
+  html += '<div class="scope-list">';
+  html += '  <p class="title">该应用将获得以下权限：</p>';
+  html += '  <ul>';
+  html += '    <li>获取您的基本信息（手机号、姓名、昵称）</li>';
+  html += '    <li>获取您的认证等级</li>';
+  html += '    <li>获取您的头像和邮箱</li>';
+  html += '  </ul>';
+  html += '</div>';
+  html += '<div class="divider"></div>';
+  html += '<div id="authArea"></div>';
+  $('content').innerHTML = html;
+
+  if (uasUser) {
+    renderConfirm();
+  } else {
+    renderLoginRegister();
+    getCaptchaCode();
+  }
+}
+
+function renderLoginRegister() {
+  var html = '';
+  html += '<div class="tabs">';
+  html += '  <div class="tab' + (activeTab === 'login' ? ' active' : '') + '" onclick="switchTab(\'login\')">登录</div>';
+  html += '  <div class="tab' + (activeTab === 'register' ? ' active' : '') + '" onclick="switchTab(\'register\')">注册</div>';
+  html += '</div>';
+  html += '<div id="tabLogin"' + (activeTab !== 'login' ? ' class="hidden"' : '') + '>';
+  html += '  <div class="form-item">';
+  html += '    <div class="input-wrap"><span class="input-icon">👤</span>';
+  html += '      <input class="input" id="loginUser" placeholder="手机号 / 企业用户名" /></div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="input-wrap"><span class="input-icon">🔒</span>';
+  html += '      <input class="input" id="loginPwd" type="password" placeholder="密码" /></div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="radio-group">';
+  html += '      <label class="radio-label"><input type="radio" name="loginType" value="personal" checked /> 个体用户</label>';
+  html += '      <label class="radio-label"><input type="radio" name="loginType" value="corp" /> 企业用户</label>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="captcha-row">';
+  html += '      <div class="input-wrap" style="flex:1"><span class="input-icon">🖼</span>';
+  html += '        <input class="input" id="loginCode" placeholder="验证码" maxlength="6" /></div>';
+  html += '      <div id="loginCaptcha"></div>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '  <button class="btn btn-primary btn-block" id="loginBtn" onclick="handleLogin()">登 录</button>';
+  html += '</div>';
+  html += '<div id="tabRegister"' + (activeTab !== 'register' ? ' class="hidden"' : '') + '>';
+  html += '  <div class="form-item">';
+  html += '    <div class="input-wrap"><span class="input-icon">📱</span>';
+  html += '      <input class="input" id="regPhone" placeholder="手机号" maxlength="11" /></div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="input-wrap"><span class="input-icon">🔒</span>';
+  html += '      <input class="input" id="regPwd" type="password" placeholder="设置密码（至少6位）" /></div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="input-wrap"><span class="input-icon">🔒</span>';
+  html += '      <input class="input" id="regPwd2" type="password" placeholder="再次输入密码" /></div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="input-wrap"><span class="input-icon">👤</span>';
+  html += '      <input class="input" id="regNick" placeholder="昵称（选填）" maxlength="20" /></div>';
+  html += '  </div>';
+  html += '  <div class="form-item">';
+  html += '    <div class="captcha-row">';
+  html += '      <div class="input-wrap" style="flex:1"><span class="input-icon">🖼</span>';
+  html += '        <input class="input" id="regCode" placeholder="验证码" maxlength="6" /></div>';
+  html += '      <div id="regCaptcha"></div>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '  <button class="btn btn-primary btn-block" id="regBtn" onclick="handleRegister()">注 册</button>';
+  html += '</div>';
+  $('authArea').innerHTML = html;
+  renderCaptcha();
+}
+
+function renderCaptcha() {
+  var loginC = $('loginCaptcha');
+  var regC = $('regCaptcha');
+  var imgHtml = captcha.img
+    ? '<img class="captcha-img" src="' + captcha.img + '" onclick="getCaptchaCode()" title="点击刷新" alt="验证码" />'
+    : '<div class="captcha-placeholder" onclick="getCaptchaCode()">点击加载</div>';
+  if (loginC) loginC.innerHTML = imgHtml;
+  if (regC) regC.innerHTML = imgHtml;
+}
+
+function renderConfirm() {
+  var name = uasUser.nickname || uasUser.realName || '已登录用户';
+  var typeText = uasUser.userType === 'corp' ? '企业用户' : '个体用户';
+  var html = '';
+  html += '<div class="confirm-section">';
+  html += '  <p class="title">您正在以以下身份授权</p>';
+  html += '  <div class="user-info">';
+  html += '    <div class="user-avatar">👤</div>';
+  html += '    <div>';
+  html += '      <p class="username">' + esc(name) + '</p>';
+  html += '      <p class="user-type">' + typeText + '</p>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '  <button class="btn btn-primary btn-block" id="confirmBtn" onclick="handleConfirm()">同意授权</button>';
+  html += '  <button class="btn btn-default btn-block mt10" onclick="handleCancel()">拒绝</button>';
+  html += '</div>';
+  $('authArea').innerHTML = html;
+}
+
+function showError(title, desc) {
+  $('content').innerHTML =
+    '<div class="error-box">' +
+    '<div class="icon">✕</div>' +
+    '<p style="font-size:16px;font-weight:600;margin-bottom:8px">' + esc(title) + '</p>' +
+    (desc ? '<p>' + esc(desc) + '</p>' : '') +
+    '</div>';
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ====== 交互 ======
+function switchTab(tab) {
+  activeTab = tab;
+  renderLoginRegister();
+}
+
+function getRadioValue(name) {
+  var els = document.getElementsByName(name);
+  for (var i = 0; i < els.length; i++) {
+    if (els[i].checked) return els[i].value;
+  }
+  return '';
+}
+
+function handleLogin() {
+  var username = $('loginUser').value.trim();
+  var password = $('loginPwd').value;
+  var code = $('loginCode').value.trim();
+  var userType = getRadioValue('loginType') || 'personal';
+  if (!username || !password) { showMsg('请输入账号密码', 'warning'); return; }
+  if (!code) { showMsg('请输入验证码', 'warning'); return; }
+
+  var btn = $('loginBtn');
+  btn.disabled = true; btn.textContent = '登录中...';
+  ajax('POST', '/api/uas/login', {
+    username: username,
+    password: password,
+    code: code,
+    uuid: captcha.uuid,
+    userType: userType
+  }).then(function(res) {
+    if (res.code === 200 && res.data) {
+      uasUser = {
+        userId: res.data.userId,
+        userType: res.data.userType || userType,
+        nickname: res.data.nickname,
+        realName: res.data.realName
+      };
+      showMsg('登录成功', 'success');
+      renderConfirm();
+    } else {
+      showMsg(res.msg || res.message || '登录失败', 'error');
+      getCaptchaCode();
+      $('loginCode').value = '';
+    }
+  }).catch(function() {
+    showMsg('网络错误', 'error');
+    getCaptchaCode();
+  }).finally(function() {
+    btn.disabled = false; btn.textContent = '登 录';
+  });
+}
+
+function handleRegister() {
+  var phone = $('regPhone').value.trim();
+  var password = $('regPwd').value;
+  var password2 = $('regPwd2').value;
+  var nickname = $('regNick').value.trim();
+  var code = $('regCode').value.trim();
+  if (!phone) { showMsg('请输入手机号', 'warning'); return; }
+  if (!/^1[3-9]\d{9}$/.test(phone)) { showMsg('手机号格式不正确', 'warning'); return; }
+  if (!password || password.length < 6) { showMsg('密码至少6位', 'warning'); return; }
+  if (password !== password2) { showMsg('两次输入的密码不一致', 'warning'); return; }
+  if (!code) { showMsg('请输入验证码', 'warning'); return; }
+
+  var btn = $('regBtn');
+  btn.disabled = true; btn.textContent = '注册中...';
+  ajax('POST', '/api/auth/register', {
+    phone: phone,
+    password: password,
+    nickname: nickname,
+    code: code,
+    uuid: captcha.uuid
+  }).then(function(res) {
+    if (res.code === 200 && res.data) {
+      showMsg(res.msg || '注册成功', 'success');
+      if (res.data.userId) {
+        uasUser = {
+          userId: res.data.userId,
+          userType: 'personal',
+          nickname: res.data.nickname || nickname,
+          realName: ''
+        };
+        renderConfirm();
+      }
+    } else {
+      showMsg(res.msg || res.message || '注册失败', 'error');
+      getCaptchaCode();
+      $('regCode').value = '';
+    }
+  }).catch(function() {
+    showMsg('网络错误', 'error');
+    getCaptchaCode();
+  }).finally(function() {
+    btn.disabled = false; btn.textContent = '注 册';
+  });
+}
+
+function handleConfirm() {
+  var btn = $('confirmBtn');
+  btn.disabled = true; btn.textContent = '授权中...';
+  ajax('POST', '/api/oauth/authorize', {
+    client_id: params.client_id,
+    redirect_uri: params.redirect_uri,
+    state: params.state,
+    scope: params.scope,
+    user_id: uasUser.userId,
+    user_type: uasUser.userType
+  }).then(function(res) {
+    if (res.code === 200 && res.data && res.data.redirect_url) {
+      window.location.href = res.data.redirect_url;
+    } else {
+      showMsg(res.msg || res.message || '授权失败', 'error');
+      btn.disabled = false; btn.textContent = '同意授权';
+    }
+  }).catch(function() {
+    showMsg('网络错误', 'error');
+    btn.disabled = false; btn.textContent = '同意授权';
+  });
+}
+
+function handleCancel() {
+  var redirect = params.redirect_uri;
+  if (redirect) {
+    var sep = redirect.indexOf('?') >= 0 ? '&' : '?';
+    window.location.href = redirect + sep + 'error=access_denied';
+  } else {
+    window.location.href = '/';
+  }
+}
+
+// 回车提交
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  if (activeTab === 'login' && $('loginBtn') && !$('loginBtn').disabled) handleLogin();
+  if (activeTab === 'register' && $('regBtn') && !$('regBtn').disabled) handleRegister();
+});
+
+init();
+</script>
+</body>
+</html>

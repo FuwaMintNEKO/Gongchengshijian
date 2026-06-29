@@ -180,6 +180,10 @@ func main() {
 	os.MkdirAll("uploads/avatar", 0755)
 	r.Static("/uploads", "./uploads")
 
+	// OAuth 授权页（原生 HTML，无需前端构建）
+	// 访问 /oauth/authorize 返回授权页 HTML，页面内 JS 调用 /api/oauth/* 接口
+	r.StaticFile("/oauth/authorize", "./public/oauth/authorize.html")
+
 	srv := &http.Server{
 		Addr:    ":" + cfg.ServerPort,
 		Handler: r,

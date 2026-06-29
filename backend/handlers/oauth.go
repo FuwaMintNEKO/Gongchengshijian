@@ -65,8 +65,8 @@ func (h *OAuthHandler) resolveRedirectURI(c *gin.Context) string {
 	return fmt.Sprintf("%s://%s/oauth/callback", getRequestScheme(c), c.Request.Host)
 }
 
-// resolveUASFrontendURL 解析 UAS 前端地址：优先用配置，否则从请求推断
-// 推断规则：与当前请求同 IP，端口取 UAS 前端默认端口 8082
+// resolveUASFrontendURL 解析 UAS 授权页地址：优先用配置，否则从请求推断
+// 推断规则：与当前请求同 IP，端口取 UAS 后端端口 8081（UAS 后端直接 serve 授权页 HTML，无需单独前端）
 func (h *OAuthHandler) resolveUASFrontendURL(c *gin.Context) string {
 	if h.Cfg.UASFrontendURL != "" {
 		return h.Cfg.UASFrontendURL
@@ -78,7 +78,7 @@ func (h *OAuthHandler) resolveUASFrontendURL(c *gin.Context) string {
 	if err != nil {
 		ip = host
 	}
-	return fmt.Sprintf("%s://%s:8082", scheme, ip)
+	return fmt.Sprintf("%s://%s:8081", scheme, ip)
 }
 
 // OAuthHandler 处理与UAS的OAuth2对接
