@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"strconv"
 
 	"uas/store"
@@ -19,7 +18,7 @@ func NewAuditHandler(s *store.Store) *AuditHandler {
 	return &AuditHandler{store: s}
 }
 
-// List 审核列表（合并自然人+法人）
+// List 审核列表（UNION 自然人+法人，统一分页）
 func (h *AuditHandler) List(c *gin.Context) {
 	page := atoiDefault(c.Query("pageNum"), 1)
 	pageSize := atoiDefault(c.Query("pageSize"), 10)
@@ -40,83 +39,69 @@ func (h *AuditHandler) List(c *gin.Context) {
 		CreateTime  string `json:"createTime"`
 	}
 
-	var list []AuditItem
+	// 构建 UNION ALL 查询
+	// 自然人: audit_status IN (1) = 待审核, audit_status IN (2) = 已通过
+	var filters []string
+	var args []interface{}
+
+	// userType 过滤
+	if userType == "personal" {
+		filters = append(filters, " AND source = 'personal'")
+	} else if userType == "corp" {
+		filters = append(filters, " AND source = 'corp'")
+	}
+
+	// auditStatus 过滤: 空=全部待审，0=未提交，1=待审核，2=通过，3=驳回
+	if auditStatus != "" {
+		filters = append(filters, " AND audit_status = ?")
+		args = append(args, auditStatus)
+	} else {
+		// 默认只显示待审核(audit_status=1)和驳回(audit_status=3)
+		filters = append(filters, " AND audit_status IN (1, 3)")
+	}
+
+	filterSQL := ""
+	for _, f := range filters {
+		filterSQL += f
+	}
+
+	subQuery := `
+		SELECT id, 'personal' AS source, phone AS username, COALESCE(real_name, phone) AS real_name,
+		       phone, audit_status, COALESCE(audit_remark, '') AS audit_remark,
+		       create_time
+		FROM u_user
+		WHERE del_flag = 0 AND audit_status > 0` + filterSQL + `
+		UNION ALL
+		SELECT id, 'corp' AS source, username, COALESCE(corp_name, username) AS real_name,
+		       phone, audit_status, COALESCE(audit_remark, '') AS audit_remark,
+		       create_time
+		FROM u_corp_user
+		WHERE del_flag = 0 AND audit_status > 0` + filterSQL
+
+	// 计数
 	var total int64
+	countSQL := "SELECT COUNT(*) FROM (" + subQuery + ") AS t"
+	countArgs := append(append([]interface{}{}, args...), args...)
+	db.QueryRow(countSQL, countArgs...).Scan(&total)
 
-	// 自然人
-	if userType == "all" || userType == "personal" {
-		where := "WHERE del_flag = 0 AND audit_status > 0"
-		args := []interface{}{}
-		if auditStatus != "" {
-			where += " AND audit_status = ?"
-			args = append(args, auditStatus)
-		}
-
-		var t1 int64
-		db.QueryRow("SELECT COUNT(*) FROM u_user "+where, args...).Scan(&t1)
-		total += t1
-
-		if userType == "personal" {
-			args2 := append([]interface{}{}, args...)
-			args2 = append(args2, pageSize, offset)
-			rows, _ := db.Query(
-				"SELECT id, phone, real_name, audit_status, audit_remark, create_time FROM u_user "+where+" ORDER BY id DESC LIMIT ? OFFSET ?",
-				args2...,
-			)
-			if rows != nil {
-				for rows.Next() {
-					var u AuditItem
-					var realName, auditRemark, phone sql.NullString
-					rows.Scan(&u.ID, &phone, &realName, &u.AuditStatus, &auditRemark, &u.CreateTime)
-					u.UserType = "personal"
-					u.Username = phone.String
-					u.RealName = realName.String
-					u.Phone = phone.String
-					u.AuditRemark = auditRemark.String
-					list = append(list, u)
-				}
-				rows.Close()
-			}
-		}
+	// 分页查询
+	querySQL := "SELECT * FROM (" + subQuery + ") AS t ORDER BY id DESC LIMIT ? OFFSET ?"
+	queryArgs := append(append(append([]interface{}{}, args...), args...), pageSize, offset)
+	rows, err := db.Query(querySQL, queryArgs...)
+	if err != nil {
+		utils.Error(c, "查询失败")
+		return
 	}
+	defer rows.Close()
 
-	// 法人
-	if userType == "all" || userType == "corp" {
-		where := "WHERE del_flag = 0 AND audit_status > 0"
-		args := []interface{}{}
-		if auditStatus != "" {
-			where += " AND audit_status = ?"
-			args = append(args, auditStatus)
+	var list []AuditItem
+	for rows.Next() {
+		var u AuditItem
+		if err := rows.Scan(&u.ID, &u.UserType, &u.Username, &u.RealName, &u.Phone, &u.AuditStatus, &u.AuditRemark, &u.CreateTime); err != nil {
+			continue
 		}
-
-		var t2 int64
-		db.QueryRow("SELECT COUNT(*) FROM u_corp_user "+where, args...).Scan(&t2)
-		total += t2
-
-		if userType == "corp" {
-			args2 := append([]interface{}{}, args...)
-			args2 = append(args2, pageSize, offset)
-			rows, _ := db.Query(
-				"SELECT id, username, corp_name, phone, audit_status, audit_remark, create_time FROM u_corp_user "+where+" ORDER BY id DESC LIMIT ? OFFSET ?",
-				args2...,
-			)
-			if rows != nil {
-				for rows.Next() {
-					var u AuditItem
-					var username, corpName, phone, auditRemark sql.NullString
-					rows.Scan(&u.ID, &username, &corpName, &phone, &u.AuditStatus, &auditRemark, &u.CreateTime)
-					u.UserType = "corp"
-					u.Username = username.String
-					u.RealName = corpName.String
-					u.Phone = phone.String
-					u.AuditRemark = auditRemark.String
-					list = append(list, u)
-				}
-				rows.Close()
-			}
-		}
+		list = append(list, u)
 	}
-
 	if list == nil {
 		list = []AuditItem{}
 	}

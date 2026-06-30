@@ -103,13 +103,13 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 
 	// 插入用户记录
 	// - auth_level=L1（基础认证等级，仅手机号验证）
-	// - audit_status=2（审核通过：注册即视为L1实名未认证但可用，更高等级需后续提交资料审核）
+	// - audit_status=1（待审核：注册后需管理员审核通过方可使用）
 	// - status=1（启用）
 	realName := strings.TrimSpace(req.RealName)
 	email := strings.TrimSpace(req.Email)
 
 	result, err := db.Exec(
-		"INSERT INTO u_user (phone, password, real_name, id_card_type, id_card_no, auth_level, nickname, email, status, audit_status) VALUES (?, ?, ?, 1, NULL, 'L1', ?, ?, 1, 2)",
+		"INSERT INTO u_user (phone, password, real_name, id_card_type, id_card_no, auth_level, nickname, email, status, audit_status) VALUES (?, ?, ?, 1, NULL, 'L1', ?, ?, 1, 1)",
 		req.Phone, string(hash), realName, req.Nickname, email,
 	)
 	if err != nil {

@@ -414,7 +414,7 @@ INSERT INTO u_app (app_id, app_name, app_type, sm4_secret, app_secret, redirect_
 
 -- 测试自然人用户
 INSERT INTO u_user (phone, password, real_name, id_card_no, auth_level, status, audit_status, nickname) VALUES
-('18788904282', '$2a$10$OWqmV9735md2JIra29db9.aTlaWa3ES/QVnESelz/AyUX6eBSDsGq', '文伟', '510123199001011234', 'L1', 1, 2, '文伟'),
+('18788904282', '$2a$10$OWqmV9735md2JIra29db9.aTlaWa3ES/QVnESelz/AyUX6eBSDsGq', '文伟', '510123199001011234', 'L1', 1, 1, '文伟'),
 ('13800000001', '$2a$10$OWqmV9735md2JIra29db9.aTlaWa3ES/QVnESelz/AyUX6eBSDsGq', '小艾', '510123199002022345', 'L2', 1, 2, '小艾'),
 ('13800000002', '$2a$10$OWqmV9735md2JIra29db9.aTlaWa3ES/QVnESelz/AyUX6eBSDsGq', '鲍勃', '510123199003033456', 'L1', 1, 1, '鲍勃');
 
