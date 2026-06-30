@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"strings"
 	"uas/store"
 	"uas/utils"
 
@@ -22,8 +23,10 @@ func (h *LogHandler) LoginLogList(c *gin.Context) {
 	page := atoiDefault(c.Query("pageNum"), 1)
 	pageSize := atoiDefault(c.Query("pageSize"), 10)
 	offset := (page - 1) * pageSize
+	// 前端传 ipaddr / status，兼容后端参数
 	username := c.Query("username")
-	loginIP := c.Query("loginIp")
+	loginIP := c.Query("ipaddr") // VUE 前端参数名为 ipaddr
+	loginResult := c.Query("status")
 
 	db := h.store.GetDB()
 	where := "WHERE 1=1"
@@ -36,12 +39,16 @@ func (h *LogHandler) LoginLogList(c *gin.Context) {
 		where += " AND login_ip LIKE ?"
 		args = append(args, "%"+loginIP+"%")
 	}
+	if loginResult != "" {
+		where += " AND login_result = ?"
+		args = append(args, loginResult)
+	}
 
 	var total int64
 	db.QueryRow("SELECT COUNT(*) FROM u_login_log "+where, args...).Scan(&total)
 
 	rows, err := db.Query(
-		"SELECT id, user_id, username, login_type, login_ip, login_result, fail_reason, user_agent, login_time FROM u_login_log "+
+		"SELECT id, user_id, username, login_type, login_ip, login_result, COALESCE(fail_reason,''), COALESCE(user_agent,''), login_time FROM u_login_log "+
 			where+" ORDER BY id DESC LIMIT ? OFFSET ?",
 		append(args, pageSize, offset)...,
 	)
@@ -51,36 +58,99 @@ func (h *LogHandler) LoginLogList(c *gin.Context) {
 	}
 	defer rows.Close()
 
+	// 字段名与 VUE 前端保持一致：ipaddr / status / loginLocation / browser / os / msg
 	type LoginLogItem struct {
-		ID          int64  `json:"id"`
-		UserID      *int64 `json:"userId"`
-		Username    string `json:"username"`
-		LoginType   string `json:"loginType"`
-		LoginIP     string `json:"loginIp"`
-		LoginResult int    `json:"loginResult"`
-		FailReason  string `json:"failReason"`
-		UserAgent   string `json:"userAgent"`
-		LoginTime   string `json:"loginTime"`
+		ID            int64  `json:"id"`
+		UserID        *int64 `json:"userId"`
+		Username      string `json:"username"`
+		LoginType     string `json:"loginType"`
+		Ipaddr        string `json:"ipaddr"`
+		Status        int    `json:"status"`
+		Msg           string `json:"msg"`
+		UserAgent     string `json:"userAgent"`
+		Browser       string `json:"browser"`
+		Os            string `json:"os"`
+		LoginLocation string `json:"loginLocation"`
+		LoginTime     string `json:"loginTime"`
 	}
 
 	var list []LoginLogItem
 	for rows.Next() {
 		var l LoginLogItem
-		var username, loginType, loginIP, failReason, userAgent sql.NullString
-		if err := rows.Scan(&l.ID, &l.UserID, &username, &loginType, &loginIP, &l.LoginResult, &failReason, &userAgent, &l.LoginTime); err != nil {
+		var userAgent, failReason string
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Username, &l.LoginType, &l.Ipaddr, &l.Status, &failReason, &userAgent, &l.LoginTime); err != nil {
 			continue
 		}
-		l.Username = username.String
-		l.LoginType = loginType.String
-		l.LoginIP = loginIP.String
-		l.FailReason = failReason.String
-		l.UserAgent = userAgent.String
+		l.UserAgent = userAgent
+		// msg：成功为空，失败显示原因
+		if l.Status == 0 && failReason != "" {
+			l.Msg = failReason
+		}
+		// 从 UserAgent 解析浏览器和操作系统
+		l.Browser, l.Os = parseUserAgent(userAgent)
+		// IP 地点映射（简单版本，完整版可接 GeoIP 库）
+		l.LoginLocation = ipToLocation(l.Ipaddr)
 		list = append(list, l)
 	}
 	if list == nil {
 		list = []LoginLogItem{}
 	}
 	utils.SuccessPage(c, total, list)
+}
+
+// parseUserAgent 从 UA 字符串解析浏览器和操作系统
+func parseUserAgent(ua string) (browser, os string) {
+	if ua == "" {
+		return "", ""
+	}
+	uaLower := strings.ToLower(ua)
+	// 浏览器
+	switch {
+	case strings.Contains(uaLower, "edg"):
+		browser = "Edge"
+	case strings.Contains(uaLower, "chrome"):
+		browser = "Chrome"
+	case strings.Contains(uaLower, "firefox"):
+		browser = "Firefox"
+	case strings.Contains(uaLower, "safari") && !strings.Contains(uaLower, "chrome"):
+		browser = "Safari"
+	default:
+		browser = ""
+	}
+	// 操作系统
+	switch {
+	case strings.Contains(uaLower, "windows nt 10"):
+		os = "Windows 10"
+	case strings.Contains(uaLower, "windows nt 6.3"):
+		os = "Windows 8.1"
+	case strings.Contains(uaLower, "windows nt 6.1"):
+		os = "Windows 7"
+	case strings.Contains(uaLower, "windows"):
+		os = "Windows"
+	case strings.Contains(uaLower, "mac os x") || strings.Contains(uaLower, "macintosh"):
+		os = "Mac OS"
+	case strings.Contains(uaLower, "iphone") || strings.Contains(uaLower, "ipad"):
+		os = "iOS"
+	case strings.Contains(uaLower, "android"):
+		os = "Android"
+	case strings.Contains(uaLower, "linux"):
+		os = "Linux"
+	}
+	return
+}
+
+// ipToLocation IP地址转换为登录地点（简单版，内网/本机返回对应文本）
+func ipToLocation(ip string) string {
+	if ip == "" {
+		return ""
+	}
+	if ip == "127.0.0.1" || ip == "::1" || strings.HasPrefix(ip, "0:") {
+		return "内网IP"
+	}
+	if strings.HasPrefix(ip, "192.168.") || strings.HasPrefix(ip, "10.") || strings.HasPrefix(ip, "172.16.") || strings.HasPrefix(ip, "172.17.") || strings.HasPrefix(ip, "172.18.") || strings.HasPrefix(ip, "172.19.") || strings.HasPrefix(ip, "172.2") || strings.HasPrefix(ip, "172.30.") || strings.HasPrefix(ip, "172.31.") {
+		return "内网IP"
+	}
+	return ip
 }
 
 func (h *LogHandler) CleanLoginLog(c *gin.Context) {

@@ -97,7 +97,7 @@ func (h *AuthHandler) loginSysUser(c *gin.Context, db *sql.DB, username, passwor
 	user.Nickname = nickname.String
 
 	if err == sql.ErrNoRows {
-		h.recordLoginLog(nil, username, "password", c.ClientIP(), 0, "用户不存在")
+		h.recordLoginLog(nil, username, "password", c.ClientIP(), getUserAgent(c), 0, "用户不存在")
 		utils.Error(c, "用户名或密码错误")
 		return
 	}
@@ -108,14 +108,14 @@ func (h *AuthHandler) loginSysUser(c *gin.Context, db *sql.DB, username, passwor
 
 	// 校验密码
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
-		h.recordLoginLog(&user.ID, username, "password", c.ClientIP(), 0, "密码错误")
+		h.recordLoginLog(&user.ID, username, "password", c.ClientIP(), getUserAgent(c), 0, "密码错误")
 		utils.Error(c, "用户名或密码错误")
 		return
 	}
 
 	// 校验状态
 	if user.Status != 1 {
-		h.recordLoginLog(&user.ID, username, "password", c.ClientIP(), 0, "账号已禁用")
+		h.recordLoginLog(&user.ID, username, "password", c.ClientIP(), getUserAgent(c), 0, "账号已禁用")
 		utils.Error(c, "账号已禁用，请联系管理员")
 		return
 	}
@@ -150,7 +150,7 @@ func (h *AuthHandler) loginSysUser(c *gin.Context, db *sql.DB, username, passwor
 	}
 
 	// 记录登录日志
-	h.recordLoginLog(&user.ID, user.Username, "password", c.ClientIP(), 1, "")
+	h.recordLoginLog(&user.ID, user.Username, "password", c.ClientIP(), getUserAgent(c), 1, "")
 
 	utils.Success(c, gin.H{
 		"token":    token,
@@ -177,7 +177,7 @@ func (h *AuthHandler) loginUASUser(c *gin.Context, db *sql.DB, username, passwor
 			username,
 		).Scan(&userID, &passwordHash, &status, &nickname)
 		if err == sql.ErrNoRows {
-			h.recordLoginLog(nil, username, "password", c.ClientIP(), 0, "用户不存在")
+			h.recordLoginLog(nil, username, "password", c.ClientIP(), getUserAgent(c), 0, "用户不存在")
 			utils.Error(c, "账号或密码错误")
 			return
 		}
@@ -193,7 +193,7 @@ func (h *AuthHandler) loginUASUser(c *gin.Context, db *sql.DB, username, passwor
 			username,
 		).Scan(&userID, &passwordHash, &status, &corpName)
 		if err == sql.ErrNoRows {
-			h.recordLoginLog(nil, username, "password", c.ClientIP(), 0, "用户不存在")
+			h.recordLoginLog(nil, username, "password", c.ClientIP(), getUserAgent(c), 0, "用户不存在")
 			utils.Error(c, "账号或密码错误")
 			return
 		}
@@ -206,14 +206,14 @@ func (h *AuthHandler) loginUASUser(c *gin.Context, db *sql.DB, username, passwor
 
 	// 校验密码
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
-		h.recordLoginLog(&userID, username, "password", c.ClientIP(), 0, "密码错误")
+		h.recordLoginLog(&userID, username, "password", c.ClientIP(), getUserAgent(c), 0, "密码错误")
 		utils.Error(c, "账号或密码错误")
 		return
 	}
 
 	// 校验状态
 	if status != 1 {
-		h.recordLoginLog(&userID, username, "password", c.ClientIP(), 0, "账号已禁用")
+		h.recordLoginLog(&userID, username, "password", c.ClientIP(), getUserAgent(c), 0, "账号已禁用")
 		utils.Error(c, "账号已禁用，请联系管理员")
 		return
 	}
@@ -230,7 +230,7 @@ func (h *AuthHandler) loginUASUser(c *gin.Context, db *sql.DB, username, passwor
 	}
 
 	// 记录登录日志
-	h.recordLoginLog(&userID, username, "password", c.ClientIP(), 1, "")
+	h.recordLoginLog(&userID, username, "password", c.ClientIP(), getUserAgent(c), 1, "")
 
 	utils.Success(c, gin.H{
 		"token":    token,
@@ -380,15 +380,20 @@ func buildMenuTree(menus []models.SysMenu, parentID int64) []models.SysMenu {
 }
 
 // recordLoginLog 记录登录日志
-func (h *AuthHandler) recordLoginLog(userID *int64, username, loginType, ip string, result int, reason string) {
+func (h *AuthHandler) recordLoginLog(userID *int64, username, loginType, ip, userAgent string, result int, reason string) {
 	db := h.store.GetDB()
 	if db == nil {
 		return
 	}
 	_, _ = db.Exec(
 		"INSERT INTO u_login_log (user_id, username, login_type, login_ip, login_result, fail_reason, user_agent, login_time) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
-		userID, username, loginType, ip, result, reason, "",
+		userID, username, loginType, ip, result, reason, userAgent,
 	)
+}
+
+// getUserAgent 从请求头提取 User-Agent
+func getUserAgent(c *gin.Context) string {
+	return c.GetHeader("User-Agent")
 }
 
 // recordAuditLog 记录审计日志

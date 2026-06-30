@@ -136,7 +136,7 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 	}
 
 	// 记录注册日志到登录日志表（type=register）
-	h.recordRegisterLog(userID, req.Phone, c.ClientIP())
+	h.recordRegisterLog(userID, req.Phone, c.ClientIP(), c.GetHeader("User-Agent"))
 
 	utils.SuccessMsg(c, "注册成功", gin.H{
 		"token":     token,
@@ -178,13 +178,13 @@ func (h *RegisterHandler) CheckPhone(c *gin.Context) {
 }
 
 // recordRegisterLog 记录注册日志到登录日志表（沿用现有 u_login_log 表，login_type=register）
-func (h *RegisterHandler) recordRegisterLog(userID int64, phone, ip string) {
+func (h *RegisterHandler) recordRegisterLog(userID int64, phone, ip, userAgent string) {
 	db := h.store.GetDB()
 	if db == nil {
 		return
 	}
 	_, _ = db.Exec(
-		"INSERT INTO u_login_log (user_id, username, login_type, login_ip, login_result, fail_reason, user_agent, login_time) VALUES (?, ?, 'register', ?, 1, '注册成功', '', NOW())",
-		userID, phone, ip,
+		"INSERT INTO u_login_log (user_id, username, login_type, login_ip, login_result, fail_reason, user_agent, login_time) VALUES (?, ?, 'register', ?, 1, '注册成功', ?, NOW())",
+		userID, phone, ip, userAgent,
 	)
 }
