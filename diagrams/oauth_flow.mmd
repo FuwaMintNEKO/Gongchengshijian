@@ -1,0 +1,43 @@
+sequenceDiagram
+    actor User as 用户浏览器
+    participant ST as 二手交易平台<br/>school-trade :28080
+    participant UAS as UAS认证平台<br/>:8081
+    participant DB as MySQL<br/>uas_db
+
+    User->>ST: 点击"UAS统一身份认证登录"
+    ST->>ST: 动态推断UAS地址<br/>(同IP:8081)
+    ST-->>User: 302跳转<br/>/oauth/authorize?client_id=KK790&redirect_uri=...
+
+    User->>UAS: GET /oauth/authorize
+    UAS->>DB: 校验client_id & redirect_uri
+    UAS-->>User: 原生HTML授权页<br/>(含登录/注册/验证码)
+
+    User->>UAS: GET /api/auth/captcha
+    UAS-->>User: base64验证码图片
+
+    User->>UAS: POST /api/uas/login<br/>(手机号+密码+验证码)
+    UAS->>DB: bcrypt验密 + 查状态
+    UAS-->>User: userId + nickname
+
+    User->>User: 页面渲染授权确认<br/>"该应用将获取基本权限"
+
+    User->>UAS: POST /api/oauth/authorize<br/>(同意授权)
+    UAS->>UAS: 生成一次性code<br/>(32位随机串,300秒过期)
+    UAS->>DB: 记录授权grant
+    UAS-->>User: 302跳转 带code
+
+    User->>ST: GET /oauth/callback?code=xxx
+    ST->>UAS: POST /api/oauth/token<br/>(code+client_secret)
+    UAS->>UAS: 校验secret+code+过期
+    UAS->>UAS: 删除code(一次性)
+    UAS-->>ST: access_token
+
+    ST->>UAS: GET /api/oauth/userinfo<br/>(Bearer access_token)
+    UAS->>DB: 查u_user/u_corp_user
+    UAS-->>ST: {userId, phone, nickname, userType}
+
+    ST->>DB: 查/创本地用户(三策略绑定)
+    ST->>ST: 签发school-trade JWT
+    ST->>ST: SetCookie(sso_token)
+    ST-->>User: 302 → login.html?uas_token=xxx
+    User->>User: 保存token, 跳转首页
