@@ -42,8 +42,8 @@
           </el-form-item>
           <div class="tips">
             <template v-if="loginForm.userType === 'admin'">
-              <span>默认账号：admin / admin123</span>
-            </template>
+            <span></span>
+          </template>
             <template v-else-if="loginForm.userType === 'personal'">
               <span>个体用户用手机号登录</span>
               <el-link type="primary" :underline="false" @click="$router.push('/register')">立即注册</el-link>

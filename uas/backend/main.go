@@ -196,7 +196,6 @@ func main() {
 	}()
 
 	fmt.Printf("[UAS] 服务已启动: http://localhost:%s\n", cfg.ServerPort)
-	fmt.Printf("[UAS] 默认账号: admin / admin123\n")
 
 	// 优雅关闭
 	quit := make(chan os.Signal, 1)
