@@ -2,11 +2,7 @@
 *.exe
 *.exe~
 
-# Backend data
-backend/data/
-
 # Node.js
-backend-node/
 node_modules/
 
 # IDE
@@ -18,22 +14,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Screenshots
-screenshot-*.png
-test-screenshots/
-
-# 临时调试脚本与数据导出
-*.py
-*.log
-api_dump.txt
-docs_dump.txt
-test_xlsx_dump.txt
-git_log*.txt
-dump_*.sql
-dump_users_products.sql
-*-数据导入包.zip
-数据导入包/
-
-# 前端用户上传的测试资源
+# 前端用户上传资源（运行时产生，不纳入版本控制）
 frontend/resources/avatars/
 frontend/resources/upload_*.png

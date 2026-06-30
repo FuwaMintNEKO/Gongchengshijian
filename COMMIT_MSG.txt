@@ -1,5 +1,0 @@
-fix: 修复订单聊天红点无法清除的问题
-
-- chat.html 进入聊天页后未调用 /chat-read 标记已读，导致 header 消息红点永远不消失
-- 新增 markPeerRead()：加载历史后、收到对方消息时立即标记已读，并同步刷新 header 红点
-- header.js 暴露 updateChatBadge 接口供 chat.html 调用
